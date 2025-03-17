@@ -96,9 +96,10 @@ def stamp_set_name(name):
         else: var_name += f'{name[i]}'
     return var_name
 
+#pdfを分割して保存
 def pdf(input_path, output_path):
     doc = fitz.open(input_path) # open a document
-    doc.copy_page(0) # copy the 1st page and puts it at the end of the document
+    doc.copy_page(pno=0, to=-1) # copy the 1st page and puts it at the end of the document
     doc.save(f"{output_path}/test-page-copied.pdf") # save the document
 
 def main():
@@ -157,6 +158,8 @@ def main():
         #ハンコ生成
         if event == '-generate-':
             name = values['-name-']
+            canvas.delete('circle')
+            canvas.delete('text')
             create_circle(canvas)
             embedded_name(canvas,name)
         
