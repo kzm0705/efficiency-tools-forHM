@@ -6,21 +6,28 @@ import tkinter as tk
 
 theme = sg.theme('DarkBlack1')
 
-frame_1= [[sg.Text('入力ファイル: ')],
+
+column_layout = [[sg.Input(size=(10,2), key='-name-'), sg.Button('ハンコ生成', key='-generate-', button_color=('white','green'),enable_events=True,)],
+                 [sg.Slider(range=(5,25), default_value=15, orientation="h",enable_events=True, key='-text_size-')]
+                 ]
+
+frame_1= [
+          [sg.Text('入力ファイル: ')],
           [sg.Input(size=(45,1), key='-input-', enable_events=True),sg.FileBrowse(file_types=(('PDFファイル','*.pdf'),))],
           #出力ファイル
           [sg.Text('出力先フォルダ:', pad=((0,0),(20,5)))],
-          [sg.Input(size=(45,1), key='output'),sg.FolderBrowse()],
+          [sg.Input(size=(45,1), key='-output-'),sg.FolderBrowse()],
           #ハンコ
           [sg.Text('捺印する名前を入力してください(最大で四文字まで):',pad=((0,0),(20,5)))],
-          [sg.Input(size=(15,2), key='-name-'), sg.Button('ハンコ生成', key='-generate-', button_color=('white','green'),enable_events=True,),
-           sg.VerticalSeparator(pad=((20,5),(5,5))),sg.Canvas(background_color='white', size=(100,100), key='-sample-'),
+          [sg.Column(column_layout)
+           ,sg.VerticalSeparator(pad=((20,5),(5,5))),sg.Canvas(background_color='white', size=(100,100), key='-sample-'),
            sg.Slider(range=(10,50),enable_events=True, key='-slider-',default_value=25)],
            #保存
           [sg.Button('分割して保存',key='-save-', button_color=('white','red'), disabled=True)],
           ]
 
-frame_2 = [[sg.Image(data=None, key='IMAGE',expand_x=True,expand_y=True)],
+frame_2 = [
+           [sg.Image(data=None, key='IMAGE',expand_x=True,expand_y=True)],
            [sg.Button('前へ',disabled=True), sg.Button('次へ',disabled=True), sg.Text('0 / 0',key='-page-',font=('Helvetica',15))],
            ]
 
@@ -75,10 +82,10 @@ def create_circle(canvas,radius=25):
     color = 'white'  # 円の色
     canvas.create_oval(center_x - radius, center_y - radius,
                         center_x + radius, center_y + radius,
-                        outline='red',width=2)
+                        outline='red',width=2, tag='circle')
 #ハンコの中の名前を描画
-def embedded_name(canvas,name):
-    canvas.create_text(50,50, text=stamp_set_name(name), fill='red')
+def embedded_name(canvas,name='名前', size=15):
+    canvas.create_text(50,50, text=stamp_set_name(name), fill='red',font=('Helvetica', size), tag='text')
 
 #名前の文字を縦にする
 def stamp_set_name(name):
@@ -89,6 +96,11 @@ def stamp_set_name(name):
         else: var_name += f'{name[i]}'
     return var_name
 
+def pdf(input_path, output_path):
+    doc = fitz.open(input_path) # open a document
+    doc.copy_page(0) # copy the 1st page and puts it at the end of the document
+    doc.save(f"{output_path}/test-page-copied.pdf") # save the document
+
 def main():
     
     layout = [[sg.Frame('I/O',frame_1,size=(400,800)),sg.Frame('preview',frame_2,size=(600,800),expand_x=True,expand_y=True,element_justification='center')]]
@@ -98,13 +110,18 @@ def main():
     page_num = 0
     page_count = 0
     flag = False
+    name = '名前'
+    circle_text_init = True
 
     while True:
         event, values = window.read(timeout=100)
 
-        #ハンコの円を描画
         canvas = window['-sample-'].tk_canvas
-        create_circle(canvas,values['-slider-'])
+
+        if circle_text_init:
+            create_circle(canvas)
+            embedded_name(canvas)
+            circle_text_init = False
 
         if event == sg.WIN_CLOSED:
             break
@@ -135,12 +152,23 @@ def main():
 
         #pdfファイルに捺印し四つに分割し保存の処理
         if event == '-save-':
-            pass
+            pdf(values['-input-'], values['-output-'])
 
         #ハンコ生成
         if event == '-generate-':
             name = values['-name-']
+            create_circle(canvas)
             embedded_name(canvas,name)
+        
+        if event == '-slider-':
+            canvas.delete('circle')
+            create_circle(canvas, int(values['-slider-']))
+
+        if event == '-text_size-' :
+            canvas.delete('text')
+            embedded_name(canvas,name, int(values['-text_size-']))
+
+
 
         if event and not flag:
              continue
