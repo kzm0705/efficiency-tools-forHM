@@ -6,7 +6,6 @@ import tkinter as tk
 
 theme = sg.theme('DarkBlack1')
 
-
 column_layout = [
                  [sg.Input(size=(10,2), key='-name-'), sg.Button('ハンコ生成', key='-generate-', button_color=('white','green'),enable_events=True,)],
                  [sg.Slider(range=(5,25), default_value=15, orientation="h",enable_events=True, key='-text_size-')]
@@ -25,6 +24,7 @@ frame_1= [
            sg.Slider(range=(10,50),enable_events=True, key='-slider-',default_value=25)],
            #保存
           [sg.Button('分割して保存',key='-save-', button_color=('white','red'), disabled=True)],
+          [sg.Button('保存')]
           ]
 
 frame_2 = [
@@ -109,6 +109,15 @@ def pdf(input_path, output_path, sep=4):
     # data = pix.tobytes()
     # return data
 
+#pdfファイルに捺印する
+def stamp_pdf(loc_x,loc_y,input_path,output_pdf):
+    doc = fitz.open(input_path)
+    rect = (0,0,loc_x,loc_y)
+    img = open("ダウンロード.jpg", "rb").read()
+    for page in doc:
+        page.insert_image(rect, stream=img)
+        doc.save(f'{output_pdf}/test.pdf')
+
 
 def main():
     
@@ -183,7 +192,11 @@ def main():
             widget = window["IMAGE"].Widget
             x = widget.winfo_pointerx() - widget.winfo_rootx()
             y = widget.winfo_pointery() - widget.winfo_rooty()
-            print(x,y)
+
+
+        if event == '保存':
+            stamp_pdf(200,500,'hello.pdf','pdfs')
+
 
 
 
