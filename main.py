@@ -1,197 +1,169 @@
-import PySimpleGUI as sg
-import pypdf
 import fitz
-import PIL
 import tkinter as tk
+from tkinter import filedialog, messagebox
+from PIL import Image, ImageTk, ImageDraw, ImageFont
+import os
 
-theme = sg.theme('DarkBlack1')
+class PDFViewerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("PDF分割ツール")
+        self.root.geometry("700x650")
 
+        self.pdf_path = None
+        self.output_dir = None
+        self.page_count = 0
+        self.current_page = 0
+        self.pdf_doc = None
+        self.hanko_name = "名前"
+        self.hanko_size = 15
+        self.hanko_position = (50, 50)  # デフォルト座標
 
-column_layout = [
-                 [sg.Input(size=(10,2), key='-name-'), sg.Button('ハンコ生成', key='-generate-', button_color=('white','green'),enable_events=True,)],
-                 [sg.Slider(range=(5,25), default_value=15, orientation="h",enable_events=True, key='-text_size-')]
-                 ]
+        self.setup_ui()
 
-frame_1= [
-          [sg.Text('入力ファイル: ')],
-          [sg.Input(size=(45,1), key='-input-', enable_events=True),sg.FileBrowse(file_types=(('PDFファイル','*.pdf'),))],
-          #出力ファイル
-          [sg.Text('出力先フォルダ:', pad=((0,0),(20,5)))],
-          [sg.Input(size=(45,1), key='-output-'),sg.FolderBrowse()],
-          #ハンコ
-          [sg.Text('捺印する名前を入力してください(最大で四文字まで):',pad=((0,0),(20,5)))],
-          [sg.Column(column_layout)
-           ,sg.VerticalSeparator(pad=((20,5),(5,5))),sg.Canvas(background_color='white', size=(100,100), key='-sample-'),
-           sg.Slider(range=(10,50),enable_events=True, key='-slider-',default_value=25)],
-           #保存
-          [sg.Button('分割して保存',key='-save-', button_color=('white','red'), disabled=True)],
-          ]
+    def setup_ui(self):
+        # PDF選択ボタン
+        self.btn_select_pdf = tk.Button(self.root, text="PDFを選択", command=self.select_pdf)
+        self.btn_select_pdf.pack(pady=5)
 
-frame_2 = [
-           [sg.Image(data=None, key='IMAGE',enable_events=True, )],
-           [sg.Button('前へ',disabled=True), sg.Button('次へ',disabled=True), sg.Text('0 / 0',key='-page-',font=('Helvetica',15))],
-           ]
+        # PDFプレビュー (小さめ)
+        self.canvas = tk.Canvas(self.root, width=400, height=400, bg="gray")
+        self.canvas.pack()
+        self.canvas.bind("<Button-1>", self.set_hanko_position)  # クリックでハンコ座標設定
 
-#PDFファイルを画像に変換
-def pdf_to_image(pdf_file, page_count):
-    pdf = fitz.open(pdf_file)
-    pdf_page = pdf[page_count]
-    pix = pdf_page.get_pixmap()
-    print(pix)
-    data = pix.tobytes()
-    # width = pix.width
-    # height = pix.height
-    # print(width,height)
-    pdf.close()
-    return data
+        # ページコントロール
+        control_frame = tk.Frame(self.root)
+        control_frame.pack(pady=5)
 
-#ページ数を取得
-def get_page_PDF(pdf_file):
-    pdf = fitz.open(pdf_file)
-    page_num = len(pdf)
-    pdf.close()
-    return page_num
+        self.btn_prev = tk.Button(control_frame, text="前へ", command=self.prev_page, state=tk.DISABLED)
+        self.btn_prev.pack(side=tk.LEFT, padx=10)
 
+        self.page_label = tk.Label(control_frame, text="0 / 0")
+        self.page_label.pack(side=tk.LEFT)
 
-#次のPDFページを表示
-def get_next_page(pdf_file, page_num, page_count):
-    if page_num -1 > page_count:
-        page_count += 1
-        data = pdf_to_image(pdf_file, page_count)
-        return data, page_count
-    else:
-        page_count = 0
-        data = pdf_to_image(pdf_file, page_count)
-        return data, page_count
+        self.btn_next = tk.Button(control_frame, text="次へ", command=self.next_page, state=tk.DISABLED)
+        self.btn_next.pack(side=tk.LEFT, padx=10)
 
+        # ハンコ設定
+        self.hanko_frame = tk.Frame(self.root)
+        self.hanko_frame.pack(pady=5)
 
-#前のPDFページを表示
-def get_prev_page(pdf_file, page_num, page_count):
-    if  page_count > 0:
-        page_count -= 1
-        data = pdf_to_image(pdf_file, page_count)
-        return data, page_count
-    else:
-        page_count = page_num -1
-        data = pdf_to_image(pdf_file, page_count)
-        return data, page_count
+        tk.Label(self.hanko_frame, text="捺印名 (最大4文字):").grid(row=0, column=0)
+        self.hanko_entry = tk.Entry(self.hanko_frame, width=5)
+        self.hanko_entry.grid(row=0, column=1)
+        self.hanko_entry.insert(0, self.hanko_name)
 
-#ハンコを描画
-def create_circle(canvas,radius=25):
+        self.hanko_size_slider = tk.Scale(self.hanko_frame, from_=10, to=50, orient=tk.HORIZONTAL, label="サイズ")
+        self.hanko_size_slider.set(self.hanko_size)
+        self.hanko_size_slider.grid(row=1, column=0, columnspan=2)
 
-    center_x = 50  # 円の中心のX座標
-    center_y = 50  # 円の中心のY座標
-    color = 'white'  # 円の色
-    canvas.create_oval(center_x - radius, center_y - radius,
-                        center_x + radius, center_y + radius,
-                        outline='red',width=2, tag='circle')
-#ハンコの中の名前を描画
-def embedded_name(canvas, name='名前', size=15):
-    canvas.create_text(50,50, text=stamp_set_name(name), fill='red', font=('Helvetica', size), tag='text')
+        self.btn_generate_hanko = tk.Button(self.hanko_frame, text="ハンコ生成", command=self.generate_hanko)
+        self.btn_generate_hanko.grid(row=2, column=0, columnspan=2)
 
-#名前の文字を縦にする
-def stamp_set_name(name):
-    var_name = ""
-    for i in range(len(name)):
-        if i != len(name) -1 :
-            var_name += f'{name[i]}\n'
-        else: var_name += f'{name[i]}'
-    return var_name
+        # 出力フォルダ選択 & PDF保存
+        self.btn_select_output = tk.Button(self.root, text="出力フォルダ選択", command=self.select_output)
+        self.btn_select_output.pack(pady=5)
 
-#pdfを分割して保存
-def pdf(input_path, output_path, sep=4):
-    for i in range(sep):
-        doc = fitz.open(input_path) # open a document
-        doc.select([i])
-        doc.save(f"{output_path}/test-page-copied{i}.pdf") # save the document
-        doc.close()
-    # pix = selected_pdf.get_pixmap()
-    # data = pix.tobytes()
-    # return data
+        self.btn_save_pdf = tk.Button(self.root, text="PDF分割保存", command=self.split_and_save_pdf, state=tk.DISABLED)
+        self.btn_save_pdf.pack(pady=5)
 
+    def select_pdf(self):
+        self.pdf_path = filedialog.askopenfilename(filetypes=[("PDF Files", "*.pdf")])
+        if self.pdf_path:
+            self.load_pdf()
 
-def main():
-    
-    layout = [[sg.Frame('I/O',frame_1,size=(400,800)),sg.Frame('preview', frame_2,size=(600,800), expand_x=True, expand_y=True, element_justification='center')]]
-    
-    window = sg.Window('PDF分割ツール1.0.0', layout, size=(1000,800), resizable=True, return_keyboard_events=True,)
+    def load_pdf(self):
+        try:
+            self.pdf_doc = fitz.open(self.pdf_path)
+            self.page_count = len(self.pdf_doc)
+            self.current_page = 0
+            self.update_page()
+            self.btn_next.config(state=tk.NORMAL if self.page_count > 1 else tk.DISABLED)
+            self.btn_save_pdf.config(state=tk.NORMAL)
+        except Exception as e:
+            messagebox.showerror("エラー", f"PDFの読み込みに失敗しました: {e}")
 
-    page_num = 0
-    page_count = 0
-    flag = False
-    name = '名前'
-    circle_text_init = True
+    def update_page(self):
+        if not self.pdf_doc:
+            return
 
-    while True:
-        event, values = window.read(timeout=100)
-        canvas = window['-sample-'].tk_canvas
+        pix = self.pdf_doc[self.current_page].get_pixmap()
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        img.thumbnail((400, 400))  # サイズ調整
+        self.photo = ImageTk.PhotoImage(img)
+        self.canvas.create_image(200, 200, image=self.photo)  # キャンバス中央
 
-        if circle_text_init:
-            create_circle(canvas)
-            embedded_name(canvas)
-            circle_text_init = False
+        self.page_label.config(text=f"{self.current_page + 1} / {self.page_count}")
 
-        if event == sg.WIN_CLOSED:
-            break
+    def next_page(self):
+        if self.current_page < self.page_count - 1:
+            self.current_page += 1
+            self.update_page()
+        self.btn_prev.config(state=tk.NORMAL)
+        if self.current_page == self.page_count - 1:
+            self.btn_next.config(state=tk.DISABLED)
 
-        #pdfファイルをビューに表示
-        if event =='-input-':
-            data = pdf_to_image(values['-input-'], page_count)
-            page_num = get_page_PDF(values['-input-'])
-            window['IMAGE'].update(data=data)
+    def prev_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_page()
+        self.btn_next.config(state=tk.NORMAL)
+        if self.current_page == 0:
+            self.btn_prev.config(state=tk.DISABLED)
 
-            window['-page-'].update(f'1 / {page_num}')
-            window['前へ'].update(disabled=False)
-            window['次へ'].update(disabled=False)
-            window['-save-'].update(disabled=False)
-            flag = True
+    def select_output(self):
+        self.output_dir = filedialog.askdirectory()
+        if self.output_dir:
+            messagebox.showinfo("フォルダ選択", f"出力フォルダ: {self.output_dir}")
 
-        #ページをスクロール
-        if event in ('次へ', "MouseWheel:Down") and flag:
-            data, page_count = get_next_page(values['-input-'], page_num, page_count)
-            # print(page_count)
-            window['IMAGE'].update(data=data)
-            window['-page-'].update(f'{page_count+1}/ {page_num}')
+    def split_and_save_pdf(self):
+        if not self.pdf_doc or not self.output_dir:
+            messagebox.showwarning("警告", "PDFまたは出力フォルダが選択されていません")
+            return
 
-        if event in ('前へ', 'MouseWheel:Up') and flag:
-            data, page_count = get_prev_page(values['-input-'], page_num, page_count)
-            # print(page_count)
-            window['IMAGE'].update(data=data)
-            window['-page-'].update(f'{page_count+1}/ {page_num}')
+        try:
+            for i in range(min(4, self.page_count)):  # 4ページに分割
+                doc = fitz.open()
+                doc.insert_pdf(self.pdf_doc, from_page=i, to_page=i)
 
-        #pdfファイルに捺印し四つに分割し保存の処理
-        if event == '-save-':
-            data = pdf(values['-input-'], values['-output-'])
+                # ハンコを押す
+                page = doc[0]
+                page.insert_textbox(self.hanko_position, self.hanko_name, fontsize=self.hanko_size, color=(1, 0, 0))
 
-        #ハンコ生成
-        if event == '-generate-':
-            name = values['-name-']
-            canvas.delete('circle')
-            canvas.delete('text')
-            create_circle(canvas)
-            embedded_name(canvas, name)
-        
-        if event == '-slider-':
-            canvas.delete('circle')
-            create_circle(canvas, int(values['-slider-']))
+                output_path = os.path.join(self.output_dir, f"split_page_{i + 1}.pdf")
+                doc.save(output_path)
+                doc.close()
+            messagebox.showinfo("完了", "PDFを分割して保存しました")
+        except Exception as e:
+            messagebox.showerror("エラー", f"PDFの保存に失敗しました: {e}")
 
-        if event == '-text_size-' :
-            canvas.delete('text')
-            embedded_name(canvas, name, int(values['-text_size-']))
-        
-        if event == 'IMAGE' and flag:
-            widget = window["IMAGE"].Widget
-            x = widget.winfo_pointerx() - widget.winfo_rootx()
-            y = widget.winfo_pointery() - widget.winfo_rooty()
-            print(x,y)
+    def generate_hanko(self):
+        self.hanko_name = self.hanko_entry.get()[:4]
+        self.hanko_size = self.hanko_size_slider.get()
 
+        hanko_img = Image.new("RGBA", (100, 100), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(hanko_img)
+        draw.ellipse((5, 5, 95, 95), outline="red", width=3)
 
+        try:
+            font = ImageFont.truetype("arial.ttf", self.hanko_size)
+        except:
+            font = ImageFont.load_default()
 
-        if event and not flag:
-             continue
+        text_x = 50 - (self.hanko_size // 2)
+        text_y = 30
+        for char in self.hanko_name:
+            draw.text((text_x, text_y), char, fill="red", font=font)
+            text_y += self.hanko_size
 
+        self.hanko_photo = ImageTk.PhotoImage(hanko_img)
+        self.canvas.create_image(*self.hanko_position, image=self.hanko_photo)  # クリック座標に表示
 
-    window.close()
+    def set_hanko_position(self, event):
+        self.hanko_position = (event.x, event.y)
+        self.generate_hanko()
 
 if __name__ == "__main__":
-    main()
+    root = tk.Tk()
+    app = PDFViewerApp(root)
+    root.mainloop()
