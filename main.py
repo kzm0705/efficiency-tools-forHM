@@ -1,8 +1,6 @@
 import PySimpleGUI as sg
-import pypdf
 import fitz
-import PIL
-import tkinter as tk
+from PIL import Image, ImageGrab, ImageDraw
 
 theme = sg.theme('DarkBlack1')
 
@@ -24,7 +22,7 @@ frame_1= [
            sg.Slider(range=(10,50),enable_events=True, key='-slider-',default_value=25)],
            #保存
           [sg.Button('分割して保存',key='-save-', button_color=('white','red'), disabled=True)],
-          [sg.Button('保存')]
+          
           ]
 
 frame_2 = [
@@ -99,7 +97,7 @@ def stamp_set_name(name):
     return var_name
 
 #pdfを分割して保存
-def pdf(input_path, output_path, sep=4):
+def four_split_pdf(input_path, output_path, sep=4):
     for i in range(sep):
         doc = fitz.open(input_path) # open a document
         doc.select([i])
@@ -110,18 +108,56 @@ def pdf(input_path, output_path, sep=4):
     # return data
 
 #pdfファイルに捺印する
-def stamp_pdf(loc_x,loc_y,input_path,output_pdf):
+def stamp_in_viewer(loc_x,loc_y,input_path, page_count, radius):
     doc = fitz.open(input_path)
-    rect = (0,0,loc_x,loc_y)
-    img = open("ダウンロード.jpg", "rb").read()
-    for page in doc:
-        page.insert_image(rect, stream=img)
-        doc.save(f'{output_pdf}/test.pdf')
+    rect = (loc_x - radius ,loc_y - radius,loc_x + radius, loc_y + radius)
+    img = open("test.png", "rb").read()
+    for i,page in enumerate(doc):
+        if i == page_count:
+            page.insert_image(rect, stream=img)
+            doc.save(f'temp/test.pdf')
+        else:pass
+    return 'temp/test.pdf'
+    
+#(仮)はんこの画像を作る
+def create_stamp_png(canvas,canvas_widget, circle_radius):
+    #画面上のcanvasの絶対位置
+    abs_x = canvas_widget.winfo_rootx()
+    abs_y = canvas_widget.winfo_rooty()
 
+    #canvasのwidthとheight
+    width =  canvas.winfo_width()
+    height =  canvas.winfo_height()
+
+    out_circle = 50 - int(circle_radius)
+
+    left_x = abs_x + out_circle
+    left_y = abs_y + out_circle
+
+    right_x = left_x + width - 2*out_circle + 1
+    right_y = left_y + height - 2*out_circle + 1
+
+    #png画像を生成
+    image = ImageGrab.grab().crop((left_x, left_y, right_x, right_y))
+    image.save('test.png')
+    # return sg.popup('生成成功！')
+
+
+def embed_a_stamp_on_viewer(x, y, page_num, stamp_path:str, pdf_file:str):
+    data = pdf_to_image(pdf_file, page_num)
+    im1 = Image.open(data)
+    im2 = Image.open(stamp_path)
+
+    back_im = im1.copy()
+    back_im.paste(im2, (x, y))
+    back_im.save('temp/test0.png', quality=95)
+
+    return 'temp/test0.png'
+    
 
 def main():
     
-    layout = [[sg.Frame('I/O',frame_1,size=(400,800)),sg.Frame('preview', frame_2,size=(600,800), expand_x=True, expand_y=True, element_justification='center')]]
+    layout = [[sg.Frame('I/O',frame_1,size=(400,2000)),sg.Frame('preview', frame_2,size=(600,800), expand_x=True, expand_y=True, element_justification='center')]]
     
     window = sg.Window('PDF分割ツール1.0.0', layout, size=(1000,800), resizable=True, return_keyboard_events=True,)
 
@@ -134,6 +170,7 @@ def main():
     while True:
         event, values = window.read(timeout=100)
         canvas = window['-sample-'].tk_canvas
+        root = window.TKroot
 
         if circle_text_init:
             create_circle(canvas)
@@ -170,35 +207,73 @@ def main():
 
         #pdfファイルに捺印し四つに分割し保存の処理
         if event == '-save-':
-            data = pdf(values['-input-'], values['-output-'])
+
+            data = four_split_pdf('temp/test.pdf', values['-output-'])
 
         #ハンコ生成
         if event == '-generate-':
             name = values['-name-']
+            name_size = int(values['-text_size-'])
             canvas.delete('circle')
             canvas.delete('text')
-            create_circle(canvas)
-            embedded_name(canvas, name)
-        
+            create_circle(canvas,int(values['-slider-']))
+            embedded_name(canvas, name if name!="" else '名前', name_size)
+            circle_radius = values['-slider-'] + 1
+            canvas_widget = window['-sample-'].Widget
+            create_stamp_png(canvas, canvas_widget, circle_radius)
+
         if event == '-slider-':
             canvas.delete('circle')
             create_circle(canvas, int(values['-slider-']))
 
         if event == '-text_size-' :
             canvas.delete('text')
-            embedded_name(canvas, name, int(values['-text_size-']))
-        
+            embedded_name(canvas, name if name!="" else '名前', int(values['-text_size-']))
+
         if event == 'IMAGE' and flag:
             widget = window["IMAGE"].Widget
             x = widget.winfo_pointerx() - widget.winfo_rootx()
             y = widget.winfo_pointery() - widget.winfo_rooty()
+            path = values['-input-']
+            radius = int(values['-slider-'])
+            viewer_path = stamp_in_viewer(x, y, path, page_count, radius)
+            data = pdf_to_image(viewer_path, page_count)
+            page_num = get_page_PDF(viewer_path)
+
+            window['IMAGE'].update(data)
 
 
-        if event == '保存':
-            stamp_pdf(200,500,'hello.pdf','pdfs')
+            # stamp_pdf(x, y, values['-input-'],page_count, values['-slider-'])
 
 
 
+            #クリックされた座標を基にviewerにハンコを描画する
+            # path = embed_a_stamp_on_viewer(x,y, page_count, 'test.png',values['-input-'])
+            # window['IMAGE'].update(data=path)
+            # UnicodeDecodeError: 'utf-8' codec can't decode byte 0x89 in position 0: invalid start byt
+
+            # circle_radius = values['-slider-'] + 1
+            # canvas_widget = window['-sample-'].Widget
+            # create_stamp_png(canvas,canvas_widget,circle_radius)
+
+            #window内のcanvasの大きさ
+            # x1 =  canvas.winfo_width()
+            # y1 =  canvas.winfo_height()
+            #windowの絶対位置
+            # x2 = root.winfo_x()
+            # y2 = root.winfo_y()
+            # #window内のcanvasの相対位置
+            
+            # x3 = canvas_widget.winfo_rootx()
+            # y3 = canvas_widget.winfo_rooty()
+
+            # x = x2 + y3
+            # y = y2 + y3
+
+            # x4 = x3 + x1
+            # y4 = y3 + y1
+            # image = ImageGrab.grab().crop((x3, y3, x4, y4))
+            # image.save('test.png')
 
         if event and not flag:
              continue
