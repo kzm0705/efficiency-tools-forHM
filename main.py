@@ -2,6 +2,7 @@ import PySimpleGUI as sg
 import fitz
 from PIL import Image, ImageGrab, ImageDraw
 import os
+import shutil
 
 theme = sg.theme('DarkBlack1')
 
@@ -171,10 +172,15 @@ def check_input_file(input_file):
         return True
     else: return False
 
+def create_temp_folder():
+    if not os.path.isdir('temp'):
+        os.mkdir('temp')
+    else: pass
+
 def main():
     
     layout = [[sg.Frame('I/O',frame_1,size=(400,2000)),sg.Frame('preview', frame_2,size=(600,800), expand_x=True, expand_y=True, element_justification='center', key='-frame2-')]]
-    
+
     window = sg.Window('PDF分割ツール1.0.0', layout, size=(1000,800), resizable=True, return_keyboard_events=True,)
 
     page_num = 0
@@ -184,12 +190,13 @@ def main():
     circle_text_init = True
     stamp_flag = False
 
+    create_temp_folder()
+
     while True:
         event, values = window.read(timeout=100)
         canvas = window['-sample-'].tk_canvas
         root = window.TKroot
         frame_2_width, frame_2_height = window['-frame2-'].get_size()
-
 
         if circle_text_init:
             create_circle(canvas)
@@ -315,8 +322,7 @@ def main():
              continue
 
     #一時ファイル削除
-    for file in os.listdir('temp'):
-        os.remove(f'temp/{file}')
+    shutil.rmtree('temp')
 
     window.close()
 
