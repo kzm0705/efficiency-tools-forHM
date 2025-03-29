@@ -40,9 +40,6 @@ def pdf_to_image(pdf_file, page_count):
     pix = pdf_page.get_pixmap()
     # print(pix)
     data = pix.tobytes()
-    # width = pix.width
-    # height = pix.height
-    # print(width,height)
     pdf.close()
     return data
 
@@ -111,13 +108,10 @@ def stamp_set_name(name):
 #pdfを分割して保存
 def four_split_pdf(input_path, output_path, sep=4):
     for i in range(sep):
-        doc = fitz.open(input_path) # open a document
+        doc = fitz.open(input_path)
         doc.select([i])
-        doc.save(f"{output_path}/test-page-copied{i}.pdf") # save the document
+        doc.save(f"{output_path}/test-page-copied{i}.pdf") 
         doc.close()
-    # pix = selected_pdf.get_pixmap()
-    # data = pix.tobytes()
-    # return data
 
 #pdfファイルに捺印する
 def stamp_in_viewer(loc_x,loc_y,input_path, page_count, radius):
@@ -130,7 +124,8 @@ def stamp_in_viewer(loc_x,loc_y,input_path, page_count, radius):
             doc.save(f'temp/test.pdf')
         else:pass
     return 'temp/test.pdf'
-    
+
+
 #(仮)はんこの画像を作る
 def create_stamp_png(canvas,canvas_widget, circle_radius):
     #画面上のcanvasの絶対位置
@@ -152,7 +147,6 @@ def create_stamp_png(canvas,canvas_widget, circle_radius):
     #png画像を生成
     image = ImageGrab.grab().crop((left_x, left_y, right_x, right_y))
     image.save('temp/test.png')
-    # return sg.popup('生成成功！')
 
 
 def embed_a_stamp_on_viewer(x, y, page_num, stamp_path:str, pdf_file:str):
@@ -178,7 +172,7 @@ def create_temp_folder():
     else: pass
 
 def main():
-    
+
     layout = [[sg.Frame('I/O',frame_1,size=(400,2000)),sg.Frame('preview', frame_2,size=(600,800), expand_x=True, expand_y=True, element_justification='center', key='-frame2-')]]
 
     window = sg.Window('PDF分割ツール1.0.0', layout, size=(1000,800), resizable=True, return_keyboard_events=True,)
@@ -224,13 +218,11 @@ def main():
         #ページをスクロール
         if event in ('次へ', "MouseWheel:Down") and flag:
             data, page_count = get_next_page(values['-input-'], page_num, page_count)
-            # print(page_count)
             window['IMAGE'].update(data=data)
             window['-page-'].update(f'{page_count+1}/ {page_num}')
 
         if event in ('前へ', 'MouseWheel:Up') and flag:
             data, page_count = get_prev_page(values['-input-'], page_num, page_count)
-            # print(page_count)
             window['IMAGE'].update(data=data)
             window['-page-'].update(f'{page_count+1}/ {page_num}')
 
@@ -240,9 +232,6 @@ def main():
                     data = four_split_pdf('temp/test.pdf', values['-output-'])
 
                 else:sg.popup('出力先のフォルダを選択してください')
-                # input = 'temp/test.pdf'
-                # output = values['-output-']
-                # sg.popup(f'このフォルダで間違いないですか\n{output}')
 
         #ハンコ生成
         if event == '-generate-':
@@ -250,10 +239,11 @@ def main():
             name_size = int(values['-text_size-'])
             canvas.delete('circle')
             canvas.delete('text')
-            create_circle(canvas,int(values['-slider-']))
-            embedded_name(canvas, name if name!="" else '名前', name_size)
+            create_circle(canvas, int(values['-slider-']))
+            embedded_name(canvas, name if name != "" else '名前', name_size)
             circle_radius = values['-slider-'] + 1
             canvas_widget = window['-sample-'].Widget
+            canvas.update()
             create_stamp_png(canvas, canvas_widget, circle_radius)
             stamp_flag = True
 
@@ -263,7 +253,7 @@ def main():
 
         if event == '-text_size-' :
             canvas.delete('text')
-            embedded_name(canvas, name if name!="" else '名前', int(values['-text_size-']))
+            embedded_name(canvas, name if name != "" else '名前', int(values['-text_size-']))
 
         if event == 'IMAGE' and flag:
             if stamp_flag:
@@ -288,36 +278,6 @@ def main():
             window['-warning-'].update(text_color='red')
             window['-save-'].update(disabled=True)
 
-            # stamp_pdf(x, y, values['-input-'],page_count, values['-slider-'])
-
-            #クリックされた座標を基にviewerにハンコを描画する
-            # path = embed_a_stamp_on_viewer(x,y, page_count, 'test.png',values['-input-'])
-            # window['IMAGE'].update(data=path)
-            # UnicodeDecodeError: 'utf-8' codec can't decode byte 0x89 in position 0: invalid start byt
-
-            # circle_radius = values['-slider-'] + 1
-            # canvas_widget = window['-sample-'].Widget
-            # create_stamp_png(canvas,canvas_widget,circle_radius)
-
-            #window内のcanvasの大きさ
-            # x1 =  canvas.winfo_width()
-            # y1 =  canvas.winfo_height()
-            #windowの絶対位置
-            # x2 = root.winfo_x()
-            # y2 = root.winfo_y()
-            # #window内のcanvasの相対位置
-            
-            # x3 = canvas_widget.winfo_rootx()
-            # y3 = canvas_widget.winfo_rooty()
-
-            # x = x2 + y3
-            # y = y2 + y3
-
-            # x4 = x3 + x1
-            # y4 = y3 + y1
-            # image = ImageGrab.grab().crop((x3, y3, x4, y4))
-            # image.save('test.png')
-
         if event and not flag:
              continue
 
@@ -325,7 +285,6 @@ def main():
     shutil.rmtree('temp')
 
     window.close()
-
 
 if __name__ == "__main__":
     main()
