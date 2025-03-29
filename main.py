@@ -1,6 +1,7 @@
 import PySimpleGUI as sg
 import fitz
 from PIL import Image, ImageGrab, ImageDraw
+import os
 
 theme = sg.theme('DarkBlack1')
 
@@ -22,7 +23,8 @@ frame_1= [
            sg.Slider(range=(10,50),enable_events=True, key='-slider-',default_value=25)],
            #保存
           [sg.Button('分割して保存',key='-save-', button_color=('white','red'), disabled=True)],
-          
+          [sg.Text('・PDF全体が表示されるようにウィンドウを拡げてください。\n捺印する際の座標がずれる可能性があります',text_color='red', key='-warning-')],
+          [sg.Text('ページをスクロールすると捺印が取り消されるので\nもう一度捺印してください。', text_color='yellow')]
           ]
 
 frame_2 = [
@@ -35,7 +37,7 @@ def pdf_to_image(pdf_file, page_count):
     pdf = fitz.open(pdf_file)
     pdf_page = pdf[page_count]
     pix = pdf_page.get_pixmap()
-    print(pix)
+    # print(pix)
     data = pix.tobytes()
     # width = pix.width
     # height = pix.height
@@ -49,6 +51,15 @@ def get_page_PDF(pdf_file):
     page_num = len(pdf)
     pdf.close()
     return page_num
+
+#pdfサイズを取得
+def get_size_pdf(pdf_file):
+    pdf = fitz.open(pdf_file)
+    pdf_page = pdf[0]
+    pix = pdf_page.get_pixmap()
+    x = pix.width
+    y = pix.height
+    return x,y
 
 
 #次のPDFページを表示
@@ -111,7 +122,7 @@ def four_split_pdf(input_path, output_path, sep=4):
 def stamp_in_viewer(loc_x,loc_y,input_path, page_count, radius):
     doc = fitz.open(input_path)
     rect = (loc_x - radius ,loc_y - radius,loc_x + radius, loc_y + radius)
-    img = open("test.png", "rb").read()
+    img = open("temp/test.png", "rb").read()
     for i,page in enumerate(doc):
         if i == page_count:
             page.insert_image(rect, stream=img)
@@ -139,7 +150,7 @@ def create_stamp_png(canvas,canvas_widget, circle_radius):
 
     #png画像を生成
     image = ImageGrab.grab().crop((left_x, left_y, right_x, right_y))
-    image.save('test.png')
+    image.save('temp/test.png')
     # return sg.popup('生成成功！')
 
 
@@ -153,11 +164,16 @@ def embed_a_stamp_on_viewer(x, y, page_num, stamp_path:str, pdf_file:str):
     back_im.save('temp/test0.png', quality=95)
 
     return 'temp/test0.png'
-    
+
+def check_input_file(input_file):
+    file_name = os.path.basename(input_file)
+    if file_name[:5] == '注文書一式':
+        return True
+    else: return False
 
 def main():
     
-    layout = [[sg.Frame('I/O',frame_1,size=(400,2000)),sg.Frame('preview', frame_2,size=(600,800), expand_x=True, expand_y=True, element_justification='center')]]
+    layout = [[sg.Frame('I/O',frame_1,size=(400,2000)),sg.Frame('preview', frame_2,size=(600,800), expand_x=True, expand_y=True, element_justification='center', key='-frame2-')]]
     
     window = sg.Window('PDF分割ツール1.0.0', layout, size=(1000,800), resizable=True, return_keyboard_events=True,)
 
@@ -166,11 +182,14 @@ def main():
     flag = False
     name = '名前'
     circle_text_init = True
+    stamp_flag = False
 
     while True:
         event, values = window.read(timeout=100)
         canvas = window['-sample-'].tk_canvas
         root = window.TKroot
+        frame_2_width, frame_2_height = window['-frame2-'].get_size()
+
 
         if circle_text_init:
             create_circle(canvas)
@@ -182,15 +201,18 @@ def main():
 
         #pdfファイルをビューに表示
         if event =='-input-':
-            data = pdf_to_image(values['-input-'], page_count)
-            page_num = get_page_PDF(values['-input-'])
-            window['IMAGE'].update(data=data)
+            input_path = values['-input-']
+            if check_input_file(input_path):
+                data = pdf_to_image(input_path, page_count)
+                page_num = get_page_PDF(input_path)
+                pdf_width, pdf_height = get_size_pdf(input_path)
+                window['IMAGE'].update(data=data)
 
-            window['-page-'].update(f'1 / {page_num}')
-            window['前へ'].update(disabled=False)
-            window['次へ'].update(disabled=False)
-            window['-save-'].update(disabled=False)
-            flag = True
+                window['-page-'].update(f'1 / {page_num}')
+                window['前へ'].update(disabled=False)
+                window['次へ'].update(disabled=False)
+                flag = True
+            else:sg.popup('入力されたファイルに問題があります。"注文書一式"からはじまるPDFファイルを選択してください')
 
         #ページをスクロール
         if event in ('次へ', "MouseWheel:Down") and flag:
@@ -207,8 +229,13 @@ def main():
 
         #pdfファイルに捺印し四つに分割し保存の処理
         if event == '-save-':
+                if values['-output-']:
+                    data = four_split_pdf('temp/test.pdf', values['-output-'])
 
-            data = four_split_pdf('temp/test.pdf', values['-output-'])
+                else:sg.popup('出力先のフォルダを選択してください')
+                # input = 'temp/test.pdf'
+                # output = values['-output-']
+                # sg.popup(f'このフォルダで間違いないですか\n{output}')
 
         #ハンコ生成
         if event == '-generate-':
@@ -221,6 +248,7 @@ def main():
             circle_radius = values['-slider-'] + 1
             canvas_widget = window['-sample-'].Widget
             create_stamp_png(canvas, canvas_widget, circle_radius)
+            stamp_flag = True
 
         if event == '-slider-':
             canvas.delete('circle')
@@ -231,21 +259,29 @@ def main():
             embedded_name(canvas, name if name!="" else '名前', int(values['-text_size-']))
 
         if event == 'IMAGE' and flag:
-            widget = window["IMAGE"].Widget
-            x = widget.winfo_pointerx() - widget.winfo_rootx()
-            y = widget.winfo_pointery() - widget.winfo_rooty()
-            path = values['-input-']
-            radius = int(values['-slider-'])
-            viewer_path = stamp_in_viewer(x, y, path, page_count, radius)
-            data = pdf_to_image(viewer_path, page_count)
-            page_num = get_page_PDF(viewer_path)
+            if stamp_flag:
+                widget = window["IMAGE"].Widget
+                x = widget.winfo_pointerx() - widget.winfo_rootx()
+                y = widget.winfo_pointery() - widget.winfo_rooty()
+                path = values['-input-']
+                radius = int(values['-slider-'])
+                viewer_path = stamp_in_viewer(x, y, path, page_count, radius)
+                data = pdf_to_image(viewer_path, page_count)
+                page_num = get_page_PDF(viewer_path)
 
-            window['IMAGE'].update(data)
+                window['IMAGE'].update(data)
+            else:
+                sg.popup('先にハンコを作成してください')
 
+        if flag and frame_2_width > pdf_width and frame_2_height > pdf_height:
+            window['-warning-'].update(text_color='green')
+            window['-save-'].update(disabled=False)
+
+        else:
+            window['-warning-'].update(text_color='red')
+            window['-save-'].update(disabled=True)
 
             # stamp_pdf(x, y, values['-input-'],page_count, values['-slider-'])
-
-
 
             #クリックされた座標を基にviewerにハンコを描画する
             # path = embed_a_stamp_on_viewer(x,y, page_count, 'test.png',values['-input-'])
@@ -278,8 +314,12 @@ def main():
         if event and not flag:
              continue
 
+    #一時ファイル削除
+    for file in os.listdir('temp'):
+        os.remove(f'temp/{file}')
 
     window.close()
+
 
 if __name__ == "__main__":
     main()
